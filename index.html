@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Ciara | Không gian điện ảnh cá nhân" />
+  <title>Ciara | Rạp Phim Cá Nhân</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./assets/css/main.css" />
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+
+  <style>
+    .cinema-modal-box {
+      max-width: 1120px !important;
+      padding: 0 !important;
+      overflow: hidden;
+      background: #0d1017 !important;
+    }
+    .cinema-theater {
+      position: relative;
+      background: #050609;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .cinema-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      gap: 12px;
+    }
+    .cinema-now-playing {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cinema-now-playing strong {
+      color: #fff;
+    }
+    .player-stage {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+    }
+    .cinema-body {
+      padding: 24px;
+    }
+    .ep-section-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .ep-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+    .ep-btn {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid var(--glass-border);
+      color: #fff;
+      padding: 8px 15px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.86rem;
+      font-weight: 500;
+      transition: 0.15s ease;
+    }
+    .ep-btn:hover, .ep-btn.active {
+      background: var(--accent-purple);
+      border-color: var(--accent-purple);
+    }
+    .cinema-info-card {
+      display: grid;
+      grid-template-columns: 145px 1fr;
+      gap: 22px;
+      align-items: start;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .cinema-poster {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border-radius: 10px;
+      background: #141824;
+    }
+    .cinema-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0 12px;
+      font-size: 0.86rem;
+      color: var(--text-dim);
+    }
+    .cinema-badge {
+      background: rgba(168, 85, 247, 0.18);
+      color: #d8b4fe;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .cinema-overview {
+      color: var(--text-dim);
+      line-height: 1.65;
+      font-size: 0.94rem;
+    }
+    @media (max-width: 680px) {
+      .cinema-info-card {
+        grid-template-columns: 1fr;
+      }
+      .cinema-poster {
+        max-width: 140px;
+      }
+    }
+    .quick-play-bar, .admin-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .field-input {
+      flex: 1;
+      min-width: 200px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--glass-border);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      outline: none;
+    }
+    .quick-drop {
+      border: 1.5px dashed var(--glass-border);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      transition: 0.2s ease;
+    }
+    .quick-drop.dragover {
+      border-color: var(--accent-purple);
+      background: rgba(168, 85, 247, 0.12);
+      color: #fff;
+    }
+    .tmdb-results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      gap: 12px;
+      margin: 14px 0;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .tmdb-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      padding: 8px;
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+    .tmdb-card:hover, .tmdb-card.selected {
+      border-color: var(--accent-purple);
+      background: rgba(168, 85, 247, 0.16);
+    }
+    .tmdb-card img {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border-radius: 6px;
+      margin-bottom: 6px;
+    }
+    .tmdb-card-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    video::cue {
+      background: rgba(0, 0, 0, 0.78);
+      color: #fff;
+      font-weight: 600;
+      line-height: 1.4;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95);
+    }
+  </style>
+  <style id="cueSizeStyle">
+    video::cue { font-size: clamp(1.4rem, 2.6vw, 2.4rem); }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="./" class="logo">CIARA</a>
+    <div class="header-right">
+      <div class="dropdown">
+        <button class="dropbtn">Danh mục <span style="font-size: 0.7rem;">▼</span></button>
+        <div id="genre-dropdown" class="dropdown-content"></div>
+      </div>
+      <button class="request-btn" id="add-movie-btn" style="display:none;">+ Thêm phim</button>
+      <button class="ep-btn" id="quick-play-btn">Phát tệp</button>
+      <button class="ep-btn" id="vault-key-btn">🔑 Đăng nhập</button>
+      <div class="search-container">
+        <input type="text" id="search-input" placeholder="Tìm kiếm phim..." />
+        <div id="search-results" class="search-results"></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div style="text-align: center; width: 100%; color: var(--text-dim);">Đang tải kho phim...</div>
+    </section>
+
+    <section class="container">
+      <h2 class="section-title">Phân Loại</h2>
+      <div class="categories-container"></div>
+
+      <h2 class="section-title">Thư Viện Phim</h2>
+      <div class="movie-grid"></div>
+    </section>
+  </main>
+
+  <footer style="padding: 40px 5%; border-top: 1px solid var(--glass-border); text-align: center; color: var(--text-dim);">
+    <p>&copy; 2026 Ciara. Không gian giải trí cá nhân.</p>
+  </footer>
+
+  <div class="modal">
+    <div class="modal-content"></div>
+  </div>
+
+  <script src="./assets/js/app.js"></script>
+</body>
+</html>

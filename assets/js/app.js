@@ -91,8 +91,80 @@ document.addEventListener("DOMContentLoaded", () => {
     return url;
   }
 
-  function mountArtPlayer(containerEl, sourceUrl, keepBlobs = false) {
+  function createVttBlobUrl(vttText) {
+    const blob = new Blob([vttText], { type: "text/vtt;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    activeBlobUrls.push(url);
+    return url;
+  }
+
+  function normalizeToVtt(text) {
+    const clean = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (/^\s*WEBVTT/m.test(clean)) return clean;
+    return "WEBVTT\n\n" + clean.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+  }
+
+  function mountArtPlayer(containerEl, sourceUrl, keepBlobs = false, externalSubs = []) {
     destroyPlayer(!keepBlobs);
+
+    let hlsSubTracks = [];
+    let extTrackEls = [];
+
+    const syncSubtitleMenu = (player) => {
+      const items = [{ html: "Tắt phụ đề", type: "off", idx: -1 }];
+      hlsSubTracks.forEach((t, i) => {
+        items.push({ html: t.name || t.lang || `Phụ đề ${i + 1}`, type: "hls", idx: i, isDefault: Boolean(t.default) });
+      });
+      extTrackEls.forEach((el, i) => {
+        items.push({ html: el.label || `Phụ đề ngoài ${i + 1}`, type: "ext", idx: i, isDefault: !hlsSubTracks.length && i === 0 });
+      });
+
+      if (items.length <= 1) return;
+
+      const defItem = items.find((it) => it.isDefault) || items[1];
+      const applySubChoice = (item) => {
+        if (hls) {
+          if (item.type === "hls") {
+            hls.subtitleTrack = item.idx;
+            hls.subtitleDisplay = true;
+          } else {
+            hls.subtitleTrack = -1;
+            hls.subtitleDisplay = false;
+          }
+        }
+        extTrackEls.forEach((el, i) => {
+          el.track.mode = item.type === "ext" && i === item.idx ? "showing" : "disabled";
+        });
+      };
+
+      applySubChoice(defItem);
+
+      player.setting.update({
+        name: "subtitle",
+        html: "Phụ đề",
+        tooltip: defItem.html,
+        selector: items.map((it) => ({ ...it, default: it === defItem })),
+        onSelect: (item) => {
+          applySubChoice(item);
+          return item.html;
+        },
+      });
+
+      player.setting.update({
+        name: "sub-size",
+        html: "Cỡ phụ đề",
+        tooltip: "Lớn",
+        selector: [
+          { html: "Vừa", size: "clamp(1.1rem, 2vw, 1.8rem)" },
+          { html: "Lớn", size: "clamp(1.4rem, 2.6vw, 2.4rem)", default: true },
+          { html: "Rất lớn", size: "clamp(1.75rem, 3.2vw, 3rem)" },
+        ],
+        onSelect: (item) => {
+          document.getElementById("cueSizeStyle").textContent = `video::cue { font-size: ${item.size}; }`;
+          return item.html;
+        },
+      });
+    };
 
     art = new Artplayer({
       container: containerEl,
@@ -161,46 +233,22 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_, data) => {
-              const tracks = data.subtitleTracks || [];
-              if (!tracks.length) return;
-              let defaultIdx = 0;
-              const selector = [
-                { html: "Tắt phụ đề", idx: -1 },
-                ...tracks.map((t, i) => {
-                  if (t.default) defaultIdx = i;
-                  return { html: t.name || t.lang || `Phụ đề ${i + 1}`, idx: i, default: Boolean(t.default) };
-                }),
-              ];
-              hls.subtitleTrack = defaultIdx;
-              hls.subtitleDisplay = true;
-
-              player.setting.update({
-                name: "subtitle",
-                html: "Phụ đề",
-                tooltip: tracks[defaultIdx]?.name || tracks[defaultIdx]?.lang || "Bật",
-                selector,
-                onSelect: (item) => {
-                  hls.subtitleTrack = item.idx;
-                  hls.subtitleDisplay = item.idx >= 0;
-                  return item.html;
-                },
-              });
-
-              player.setting.update({
-                name: "sub-size",
-                html: "Cỡ phụ đề",
-                tooltip: "Lớn",
-                selector: [
-                  { html: "Vừa", size: "clamp(1.1rem, 2vw, 1.8rem)" },
-                  { html: "Lớn", size: "clamp(1.4rem, 2.6vw, 2.4rem)", default: true },
-                  { html: "Rất lớn", size: "clamp(1.75rem, 3.2vw, 3rem)" },
-                ],
-                onSelect: (item) => {
-                  document.getElementById("cueSizeStyle").textContent = `video::cue { font-size: ${item.size}; }`;
-                  return item.html;
-                },
-              });
+              hlsSubTracks = data.subtitleTracks || [];
+              syncSubtitleMenu(player);
             });
+
+            if (externalSubs.length) {
+              externalSubs.forEach((sub, idx) => {
+                const trackEl = document.createElement("track");
+                trackEl.kind = "subtitles";
+                trackEl.label = sub.name || `Phụ đề ngoài ${idx + 1}`;
+                trackEl.srclang = sub.lang || "vi";
+                trackEl.src = sub.vtt_text ? createVttBlobUrl(sub.vtt_text) : sub.url;
+                video.appendChild(trackEl);
+                extTrackEls.push(trackEl);
+              });
+              syncSubtitleMenu(player);
+            }
 
             player.on("destroy", () => {
               if (hls) {
@@ -506,12 +554,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!movie) return;
 
     const episodes = movie.episodes || [];
-    const playEp = (ep, playerEl, labelEl) => {
+    let currentEpIdx = 0;
+    const playEp = (ep, idx, playerEl, labelEl) => {
+      currentEpIdx = idx;
       if (labelEl) labelEl.innerHTML = `Đang phát: <strong>${movie.title}</strong>${episodes.length > 1 ? ` — ${ep.name}` : ""}`;
+      const extSubs = ep.subs || [];
       if (ep.m3u8_text) {
-        mountArtPlayer(playerEl, createPlaylistBlobUrl(ep.m3u8_text), true);
+        mountArtPlayer(playerEl, createPlaylistBlobUrl(ep.m3u8_text), true, extSubs);
       } else if (ep.m3u8) {
-        mountArtPlayer(playerEl, ep.m3u8);
+        mountArtPlayer(playerEl, ep.m3u8, true, extSubs);
       }
     };
 
@@ -530,7 +581,9 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="cinema-now-playing" id="cinema-now-playing">Đang phát: <strong>${movie.title}</strong></div>
             ${
               getAdminKey()
-                ? `<div style="display:flex;gap:8px;flex-shrink:0;">
+                ? `<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">
+                     <button class="ep-btn" id="quick-add-sub-btn" style="padding:6px 12px;font-size:0.8rem;color:#38bdf8;">+ Phụ đề</button>
+                     <button class="ep-btn" id="quick-add-ep-btn" style="padding:6px 12px;font-size:0.8rem;color:#c084fc;">+ Thêm tập</button>
                      <button class="ep-btn" id="edit-movie-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Sửa</button>
                      <button class="ep-btn" id="delete-movie-btn" style="color:#f87171;padding:6px 12px;font-size:0.8rem;">Xóa phim</button>
                    </div>`
@@ -540,6 +593,21 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="player-stage" id="modal-player"></div>
         </div>
         <div class="cinema-body">
+          <div id="quick-add-sub-box" style="display:none;margin-bottom:18px;padding:14px;border:1px solid var(--glass-border);border-radius:12px;background:rgba(56,189,248,0.06);">
+            <div class="admin-row" style="margin-bottom:0;">
+              <input type="text" class="field-input" id="quick-sub-name" placeholder="Tên phụ đề (vd: Tiếng Việt)..." />
+              <label class="ep-btn" for="quick-sub-files" style="display:inline-flex;align-items:center;">Chọn tệp .srt / .vtt (tự lưu lên cloud)</label>
+              <input type="file" id="quick-sub-files" accept=".srt,.vtt" multiple style="display:none" />
+            </div>
+          </div>
+          <div id="quick-add-ep-box" style="display:none;margin-bottom:18px;padding:14px;border:1px solid var(--glass-border);border-radius:12px;background:rgba(255,255,255,0.03);">
+            <div class="admin-row" style="margin-bottom:0;">
+              <label class="ep-btn" for="quick-ep-files" style="display:inline-flex;align-items:center;">Chọn tệp .m3u8</label>
+              <input type="file" id="quick-ep-files" accept=".m3u8" multiple style="display:none" />
+              <input type="url" class="field-input" id="quick-ep-url" placeholder="Hoặc dán URL phát..." />
+              <button class="btn-download" id="quick-ep-url-btn" type="button">+ Thêm URL</button>
+            </div>
+          </div>
           ${
             episodes.length > 1
               ? `<div class="ep-section-title">Danh sách tập (${episodes.length})</div>
@@ -571,15 +639,94 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const playerEl = document.getElementById("modal-player");
     const labelEl = document.getElementById("cinema-now-playing");
-    if (episodes[0]) playEp(episodes[0], playerEl, labelEl);
+    if (episodes[0]) playEp(episodes[0], 0, playerEl, labelEl);
 
     modal.querySelectorAll(".ep-btn[data-idx]").forEach((btn) => {
       btn.addEventListener("click", () => {
         modal.querySelectorAll(".ep-btn[data-idx]").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
-        const ep = episodes[Number(btn.dataset.idx)];
-        if (ep) playEp(ep, playerEl, labelEl);
+        const idx = Number(btn.dataset.idx);
+        const ep = episodes[idx];
+        if (ep) playEp(ep, idx, playerEl, labelEl);
       });
+    });
+
+    document.getElementById("quick-add-sub-btn")?.addEventListener("click", () => {
+      const box = document.getElementById("quick-add-sub-box");
+      if (box) box.style.display = box.style.display === "none" ? "block" : "none";
+    });
+
+    document.getElementById("quick-sub-files")?.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length || !episodes[currentEpIdx]) return;
+      const customName = document.getElementById("quick-sub-name")?.value.trim();
+      const newSubs = [];
+      for (const f of files) {
+        const raw = await f.text();
+        newSubs.push({
+          name: customName && files.length === 1 ? customName : f.name.replace(/\.(srt|vtt)$/i, ""),
+          vtt_text: normalizeToVtt(raw),
+        });
+      }
+      const nextEpisodes = episodes.map((ep, idx) =>
+        idx === currentEpIdx ? { ...ep, subs: [...(ep.subs || []), ...newSubs] } : ep
+      );
+      const updatedMovie = { ...movie, episodes: nextEpisodes };
+      const res = await fetch(WORKER_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Key": getAdminKey() },
+        body: JSON.stringify(updatedMovie),
+      });
+      if (!res.ok) return alert("Lưu phụ đề lên cloud thất bại.");
+      const data = await res.json();
+      allMovies = data.movies || allMovies.map((m) => (String(m.id) === String(movie.id) ? updatedMovie : m));
+      const refreshed = allMovies.find((m) => String(m.id) === String(movie.id)) || updatedMovie;
+      movie.episodes = refreshed.episodes;
+      episodes.splice(0, episodes.length, ...refreshed.episodes);
+      document.getElementById("quick-add-sub-box").style.display = "none";
+      playEp(episodes[currentEpIdx], currentEpIdx, playerEl, labelEl);
+    });
+
+    document.getElementById("quick-add-ep-btn")?.addEventListener("click", () => {
+      const box = document.getElementById("quick-add-ep-box");
+      if (box) box.style.display = box.style.display === "none" ? "block" : "none";
+    });
+
+    const appendEpisodesAndSave = async (newEps) => {
+      if (!newEps.length) return;
+      const updatedMovie = {
+        ...movie,
+        type: movie.episodes.length + newEps.length > 1 ? "tv" : movie.type,
+        episodes: [...movie.episodes, ...newEps],
+      };
+      const res = await fetch(WORKER_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Key": getAdminKey() },
+        body: JSON.stringify(updatedMovie),
+      });
+      if (!res.ok) return alert("Thêm tập thất bại.");
+      const data = await res.json();
+      allMovies = data.movies || allMovies.map((m) => (String(m.id) === String(movie.id) ? updatedMovie : m));
+      renderCategories();
+      applyFilters();
+      openMovieModal(movie.id);
+    };
+
+    document.getElementById("quick-ep-files")?.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const added = [];
+      for (const f of files) {
+        const text = await f.text();
+        added.push({ name: f.name.replace(/\.m3u8$/i, "").replace(/[_-]+/g, " "), m3u8_text: text });
+      }
+      await appendEpisodesAndSave(added);
+    });
+
+    document.getElementById("quick-ep-url-btn")?.addEventListener("click", async () => {
+      const inp = document.getElementById("quick-ep-url");
+      const u = inp?.value.trim();
+      if (!u) return;
+      await appendEpisodesAndSave([{ name: `Tập ${episodes.length + 1}`, m3u8: u }]);
     });
 
     document.getElementById("edit-movie-btn")?.addEventListener("click", () => {

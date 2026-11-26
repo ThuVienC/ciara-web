@@ -270,7 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     quickPlayBtn.addEventListener("click", () => openQuickPlayer());
-    addMovieBtn.addEventListener("click", () => openAddMovieModal());
+    addMovieBtn.addEventListener("click", () => openMovieFormModal());
     vaultKeyBtn.addEventListener("click", handleAuthClick);
 
     window.addEventListener(
@@ -359,7 +359,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <button class="ep-btn" id="hero-quick-btn">Phát tệp từ máy</button>
           </div>
         </div>`;
-      document.getElementById("hero-add-btn")?.addEventListener("click", () => openAddMovieModal());
+      document.getElementById("hero-add-btn")?.addEventListener("click", () => openMovieFormModal());
       document.getElementById("hero-quick-btn")?.addEventListener("click", () => openQuickPlayer());
       return;
     }
@@ -528,7 +528,14 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="cinema-theater">
           <div class="cinema-topbar">
             <div class="cinema-now-playing" id="cinema-now-playing">Đang phát: <strong>${movie.title}</strong></div>
-            ${getAdminKey() ? `<button class="ep-btn" id="delete-movie-btn" style="color:#f87171;padding:6px 12px;font-size:0.8rem;">Xóa phim</button>` : ""}
+            ${
+              getAdminKey()
+                ? `<div style="display:flex;gap:8px;flex-shrink:0;">
+                     <button class="ep-btn" id="edit-movie-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Sửa</button>
+                     <button class="ep-btn" id="delete-movie-btn" style="color:#f87171;padding:6px 12px;font-size:0.8rem;">Xóa phim</button>
+                   </div>`
+                : ""
+            }
           </div>
           <div class="player-stage" id="modal-player"></div>
         </div>
@@ -575,6 +582,11 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
 
+    document.getElementById("edit-movie-btn")?.addEventListener("click", () => {
+      destroyPlayer(true);
+      openMovieFormModal(movie);
+    });
+
     document.getElementById("delete-movie-btn")?.addEventListener("click", async () => {
       if (!confirm(`Xóa "${movie.title}" khỏi thư viện?`)) return;
       const res = await fetch(`${WORKER_API_URL}?id=${encodeURIComponent(movie.id)}`, {
@@ -591,26 +603,51 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function openAddMovieModal() {
-    let selectedItem = null;
-    let pickedFiles = [];
+  function openMovieFormModal(existingMovie = null) {
+    const isEdit = Boolean(existingMovie);
+    let workingEpisodes = isEdit ? (existingMovie.episodes || []).map((e) => ({ ...e })) : [];
 
     modal.innerHTML = `
       <span class="close-modal">&times;</span>
       <div class="modal-content" style="padding: 28px;">
-        <h2 style="margin-bottom: 14px;">+ Thêm phim mới</h2>
+        <h2 style="margin-bottom: 14px;">${isEdit ? `✏️ Sửa phim: ${existingMovie.title}` : "+ Thêm phim mới"}</h2>
+
         <div class="admin-row">
-          <input type="text" class="field-input" id="tmdb-query" placeholder="Nhập tên phim để tìm thông tin (vd: One Piece, Inception)..." />
-          <button class="btn-download" id="tmdb-search-btn">Tìm kiếm</button>
+          <input type="text" class="field-input" id="tmdb-query" placeholder="Tìm nhanh thông tin phim (vd: One Piece, Inception)..." />
+          <button class="btn-download" id="tmdb-search-btn">Tìm</button>
+          <button class="ep-btn" id="toggle-manual-btn" type="button">✍️ Tùy chỉnh thông tin</button>
         </div>
-        <div id="tmdb-results" class="tmdb-results"></div>
-        <div class="admin-row">
-          <label class="ep-btn" for="m3u8-files" style="display:inline-flex;align-items:center;">Chọn tệp video (1 hoặc nhiều tập)</label>
+
+        <div id="tmdb-results" class="tmdb-results" style="display:none;"></div>
+
+        <div id="manual-meta-box" style="display:${isEdit ? "block" : "none"};">
+          <div class="meta-grid">
+            <input type="text" class="field-input" id="m-title" placeholder="Tên phim *" value="${(existingMovie?.title || "").replace(/"/g, "&quot;")}" />
+            <input type="text" class="field-input" id="m-orig" placeholder="Tên gốc" value="${(existingMovie?.original_title || "").replace(/"/g, "&quot;")}" />
+            <select class="field-input" id="m-type" style="background:#171b26;">
+              <option value="movie" ${existingMovie?.type !== "tv" ? "selected" : ""}>Phim Lẻ</option>
+              <option value="tv" ${existingMovie?.type === "tv" ? "selected" : ""}>Phim Bộ</option>
+            </select>
+            <input type="text" class="field-input" id="m-date" placeholder="Năm / Ngày (vd: 2026)" value="${existingMovie?.release_date || "2026"}" />
+            <input type="text" class="field-input" id="m-rate" placeholder="Điểm (vd: 8.5)" value="${existingMovie?.vote_average ?? ""}" />
+            <input type="text" class="field-input" id="m-cats" placeholder="Thể loại (cách nhau dấu phẩy)" value="${(existingMovie?.categories || "Cá nhân").replace(/"/g, "&quot;")}" />
+            <input type="url" class="field-input full" id="m-poster" placeholder="Link ảnh Poster (https://...)" value="${existingMovie?.poster_path || ""}" />
+            <input type="url" class="field-input full" id="m-backdrop" placeholder="Link ảnh nền Backdrop (https://...)" value="${existingMovie?.backdrop_path || ""}" />
+            <textarea class="field-input full" id="m-overview" rows="3" placeholder="Mô tả nội dung phim...">${existingMovie?.overview || ""}</textarea>
+          </div>
+        </div>
+
+        <div class="admin-row" style="margin-top: 10px;">
+          <label class="ep-btn" for="m3u8-files" style="display:inline-flex;align-items:center;">+ Thêm tệp từ máy</label>
           <input type="file" id="m3u8-files" accept=".m3u8" multiple style="display:none" />
+          <input type="url" class="field-input" id="ep-url-input" placeholder="Hoặc dán URL phát trực tiếp..." />
+          <button class="ep-btn" id="add-url-ep-btn" type="button">+ Thêm URL</button>
         </div>
-        <p id="picked-info" style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 14px;">Chưa chọn tệp nào.</p>
+
+        <div id="ep-editor-list" style="margin: 10px 0 16px;"></div>
+
         <div class="admin-row">
-          <button class="btn-download" id="save-kv-btn">Lưu vào thư viện</button>
+          <button class="btn-download" id="save-kv-btn">${isEdit ? "Lưu thay đổi" : "Lưu vào thư viện"}</button>
         </div>
       </div>`;
 
@@ -620,14 +657,66 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const queryEl = document.getElementById("tmdb-query");
     const searchBtn = document.getElementById("tmdb-search-btn");
+    const toggleManualBtn = document.getElementById("toggle-manual-btn");
+    const manualBox = document.getElementById("manual-meta-box");
     const resultsEl = document.getElementById("tmdb-results");
     const filesEl = document.getElementById("m3u8-files");
-    const pickedInfo = document.getElementById("picked-info");
+    const epUrlInput = document.getElementById("ep-url-input");
+    const addUrlEpBtn = document.getElementById("add-url-ep-btn");
+    const epListEl = document.getElementById("ep-editor-list");
     const saveBtn = document.getElementById("save-kv-btn");
+
+    const fTitle = document.getElementById("m-title");
+    const fOrig = document.getElementById("m-orig");
+    const fType = document.getElementById("m-type");
+    const fDate = document.getElementById("m-date");
+    const fRate = document.getElementById("m-rate");
+    const fCats = document.getElementById("m-cats");
+    const fPoster = document.getElementById("m-poster");
+    const fBackdrop = document.getElementById("m-backdrop");
+    const fOverview = document.getElementById("m-overview");
+
+    let tmdbId = existingMovie?.tmdb_id || null;
+
+    function renderEpEditor() {
+      if (!workingEpisodes.length) {
+        epListEl.innerHTML = '<p style="color:var(--text-dim);font-size:0.85rem;">Chưa có tập / nguồn phát nào.</p>';
+        return;
+      }
+      epListEl.innerHTML = workingEpisodes
+        .map(
+          (ep, idx) => `
+          <div class="ep-edit-row">
+            <input type="text" class="field-input ep-name-inp" data-idx="${idx}" value="${(ep.name || "").replace(/"/g, "&quot;")}" placeholder="Tên tập" />
+            <span style="color:var(--text-dim);font-size:0.78rem;white-space:nowrap;">${ep.m3u8_text ? "Tệp đã nạp" : "URL ngoài"}</span>
+            <button class="ep-btn ep-del-btn" data-idx="${idx}" type="button" style="color:#f87171;">Xóa</button>
+          </div>`
+        )
+        .join("");
+
+      epListEl.querySelectorAll(".ep-name-inp").forEach((inp) => {
+        inp.addEventListener("input", () => {
+          workingEpisodes[Number(inp.dataset.idx)].name = inp.value;
+        });
+      });
+      epListEl.querySelectorAll(".ep-del-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          workingEpisodes.splice(Number(btn.dataset.idx), 1);
+          renderEpEditor();
+        });
+      });
+    }
+
+    renderEpEditor();
+
+    toggleManualBtn.addEventListener("click", () => {
+      manualBox.style.display = manualBox.style.display === "none" ? "block" : "none";
+    });
 
     const doSearch = async () => {
       const q = queryEl.value.trim();
       if (!q) return;
+      resultsEl.style.display = "grid";
       resultsEl.innerHTML = '<p style="color:var(--text-dim)">Đang tìm thông tin phim...</p>';
       const res = await fetch(
         `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=vi-VN&query=${encodeURIComponent(q)}`
@@ -635,7 +724,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await res.json();
       const items = (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").slice(0, 12);
       if (!items.length) {
-        resultsEl.innerHTML = '<p style="color:var(--text-dim)">Không tìm thấy kết quả phù hợp.</p>';
+        resultsEl.innerHTML = '<p style="color:var(--text-dim)">Không tìm thấy kết quả. Dùng nút "✍️ Tùy chỉnh thông tin" để tự nhập.</p>';
+        manualBox.style.display = "block";
+        if (!fTitle.value.trim()) fTitle.value = q;
         return;
       }
       resultsEl.innerHTML = items
@@ -653,7 +744,18 @@ document.addEventListener("DOMContentLoaded", () => {
         card.addEventListener("click", () => {
           resultsEl.querySelectorAll(".tmdb-card").forEach((c) => c.classList.remove("selected"));
           card.classList.add("selected");
-          selectedItem = items[Number(card.dataset.idx)];
+          const item = items[Number(card.dataset.idx)];
+          tmdbId = item.id;
+          fTitle.value = item.title || item.name || "";
+          fOrig.value = item.original_title || item.original_name || "";
+          fType.value = item.media_type === "tv" ? "tv" : "movie";
+          fDate.value = item.release_date || item.first_air_date || "2026";
+          fRate.value = Number((item.vote_average || 0).toFixed(1));
+          fCats.value = (item.genre_ids || []).map((id) => TMDB_GENRES[id]).filter(Boolean).join(", ") || "Cá nhân";
+          fPoster.value = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : "";
+          fBackdrop.value = item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : "";
+          fOverview.value = item.overview || "";
+          manualBox.style.display = "block";
         });
       });
     };
@@ -661,59 +763,67 @@ document.addEventListener("DOMContentLoaded", () => {
     searchBtn.addEventListener("click", doSearch);
     queryEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
 
-    filesEl.addEventListener("change", (e) => {
-      pickedFiles = Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-      pickedInfo.textContent = pickedFiles.length
-        ? `Đã chọn ${pickedFiles.length} tệp: ${pickedFiles.map((f) => f.name).join(", ")}`
-        : "Chưa chọn tệp nào.";
+    filesEl.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      for (const f of files) {
+        const text = await f.text();
+        const epName = files.length === 1 && !workingEpisodes.length ? "Full" : f.name.replace(/\.m3u8$/i, "").replace(/[_-]+/g, " ");
+        workingEpisodes.push({ name: epName, m3u8_text: text });
+      }
+      renderEpEditor();
+      filesEl.value = "";
+    });
+
+    addUrlEpBtn.addEventListener("click", () => {
+      const u = epUrlInput.value.trim();
+      if (!u) return;
+      workingEpisodes.push({ name: `Tập ${workingEpisodes.length + 1}`, m3u8: u });
+      epUrlInput.value = "";
+      renderEpEditor();
     });
 
     saveBtn.addEventListener("click", async () => {
-      if (!selectedItem) return alert("Hãy chọn 1 phim từ kết quả tìm kiếm.");
-      if (!pickedFiles.length) return alert("Hãy chọn ít nhất 1 tệp phát.");
+      const title = fTitle.value.trim();
+      if (!title) {
+        manualBox.style.display = "block";
+        return alert("Hãy chọn phim hoặc nhập Tên phim.");
+      }
+      if (!workingEpisodes.length) return alert("Hãy thêm ít nhất 1 tệp hoặc URL phát.");
       const pw = getAdminKey();
       if (!pw) return alert("Vui lòng đăng nhập lại.");
 
       saveBtn.disabled = true;
       saveBtn.textContent = "Đang lưu...";
 
-      const episodes = [];
-      for (const f of pickedFiles) {
-        const m3u8Text = await f.text();
-        const epName = pickedFiles.length === 1 ? "Full" : f.name.replace(/\.m3u8$/i, "").replace(/[_-]+/g, " ");
-        episodes.push({ name: epName, m3u8_text: m3u8Text });
-      }
-
-      const cats = (selectedItem.genre_ids || []).map((id) => TMDB_GENRES[id]).filter(Boolean).join(", ") || "Cá nhân";
-      const newEntry = {
-        id: Date.now(),
-        tmdb_id: selectedItem.id,
-        type: selectedItem.media_type === "tv" || episodes.length > 1 ? "tv" : "movie",
-        title: selectedItem.title || selectedItem.name,
-        original_title: selectedItem.original_title || selectedItem.name || "",
-        overview: selectedItem.overview || "",
-        poster_path: selectedItem.poster_path ? `https://image.tmdb.org/t/p/w500${selectedItem.poster_path}` : "",
-        backdrop_path: selectedItem.backdrop_path ? `https://image.tmdb.org/t/p/original${selectedItem.backdrop_path}` : "",
-        release_date: selectedItem.release_date || selectedItem.first_air_date || "2026",
-        vote_average: Number((selectedItem.vote_average || 0).toFixed(1)),
-        categories: cats,
-        episodes,
+      const entry = {
+        id: existingMovie?.id || Date.now(),
+        tmdb_id: tmdbId,
+        type: fType.value === "tv" || workingEpisodes.length > 1 ? "tv" : "movie",
+        title,
+        original_title: fOrig.value.trim(),
+        overview: fOverview.value.trim(),
+        poster_path: fPoster.value.trim(),
+        backdrop_path: fBackdrop.value.trim(),
+        release_date: fDate.value.trim() || "2026",
+        vote_average: fRate.value.trim() ? Number(fRate.value) || fRate.value.trim() : "HD",
+        categories: fCats.value.trim() || "Cá nhân",
+        episodes: workingEpisodes,
       };
 
       try {
         const res = await fetch(WORKER_API_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Admin-Key": pw },
-          body: JSON.stringify(newEntry),
+          body: JSON.stringify(entry),
         });
         if (!res.ok) {
           alert("Lưu thất bại. Kiểm tra lại phiên đăng nhập.");
           saveBtn.disabled = false;
-          saveBtn.textContent = "Lưu vào thư viện";
+          saveBtn.textContent = isEdit ? "Lưu thay đổi" : "Lưu vào thư viện";
           return;
         }
         const data = await res.json();
-        allMovies = data.movies || [newEntry, ...allMovies];
+        allMovies = data.movies || [entry, ...allMovies];
         closeModal();
         renderHero(allMovies[0], false);
         renderCategories();
@@ -721,7 +831,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (err) {
         alert("Lỗi kết nối: " + err.message);
         saveBtn.disabled = false;
-        saveBtn.textContent = "Lưu vào thư viện";
+        saveBtn.textContent = isEdit ? "Lưu thay đổi" : "Lưu vào thư viện";
       }
     });
   }

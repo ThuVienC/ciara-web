@@ -156,6 +156,28 @@
       padding: 10px 14px;
       border-radius: 10px;
       outline: none;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .meta-grid .full {
+      grid-column: 1 / -1;
+    }
+    .ep-edit-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    @media (max-width: 640px) {
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
     }
     .quick-drop {
       border: 1.5px dashed var(--glass-border);
